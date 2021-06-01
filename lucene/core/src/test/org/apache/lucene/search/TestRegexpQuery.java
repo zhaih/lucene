@@ -26,6 +26,7 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.store.Directory;
+import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.automaton.Automata;
 import org.apache.lucene.util.automaton.Automaton;
@@ -177,5 +178,17 @@ public class TestRegexpQuery extends LuceneTestCase {
    */
   public void testBacktracking() throws IOException {
     assertEquals(1, regexQueryNrHits("4934[314]"));
+  }
+
+  /** Test worst-case for getCommonSuffix optimization */
+  public void testSlowCommonSuffix() throws Exception {
+    Directory directory = newDirectory();
+    RandomIndexWriter writer = new RandomIndexWriter(random(), directory);
+    IndexReader reader = writer.getReader();
+    IndexSearcher searcher = newSearcher(reader);
+    RegexpQuery query = new RegexpQuery(new Term("stringvalue", "(.*a){2000}"));
+    TopDocs results = searcher.search(query, 10);
+    System.out.println(results.totalHits);
+    IOUtils.close(reader, writer, directory);
   }
 }
