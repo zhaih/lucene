@@ -21,36 +21,57 @@ import com.carrotsearch.hppc.BitMixer;
 import com.carrotsearch.hppc.IntIntHashMap;
 import com.carrotsearch.hppc.cursors.IntCursor;
 import java.util.Arrays;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 /** A thin wrapper of {@link com.carrotsearch.hppc.IntIntHashMap} */
 final class StateSet extends IntSet {
 
-  private final IntIntHashMap inner;
+  private final static int LIMIT = 128;
+  private final int[] directMap = new int[LIMIT];
+  private int directMapSize;
+
+  private IntIntHashMap innerMap;
   private int hashCode;
   private boolean changed;
   private int[] arrayCache = new int[0];
 
   StateSet(int capacity) {
-    inner = new IntIntHashMap(capacity);
+    innerMap = new IntIntHashMap();
   }
 
   // Adds this state to the set
   void incr(int num) {
-    if (inner.addTo(num, 1) == 1) {
+    if (num < LIMIT) {
+      directMap[num]++;
+      if (directMap[num] == 1) {
+        changed = true;
+        directMapSize++;
+      }
+    } else if (innerMap.addTo(num, 1) == 1) {
       changed = true;
     }
   }
 
   // Removes this state from the set, if count decrs to 0
   void decr(int num) {
-    assert inner.containsKey(num);
-    int keyIndex = inner.indexOf(num);
-    int count = inner.indexGet(keyIndex) - 1;
-    if (count == 0) {
-      inner.remove(num);
-      changed = true;
+    if (num < LIMIT) {
+      assert directMap[num] > 0;
+      directMap[num]--;
+      if (directMap[num] == 0) {
+        changed = true;
+        directMapSize--;
+      }
     } else {
-      inner.indexReplace(keyIndex, count);
+      assert innerMap.containsKey(num);
+      int keyIndex = innerMap.indexOf(num);
+      int count = innerMap.indexGet(keyIndex) - 1;
+      if (count == 0) {
+        innerMap.remove(num);
+        changed = true;
+      } else {
+        innerMap.indexReplace(keyIndex, count);
+      }
     }
   }
 
@@ -58,9 +79,24 @@ final class StateSet extends IntSet {
     if (changed == false) {
       return;
     }
-    hashCode = inner.size();
-    for (IntCursor cursor : inner.keys()) {
+    hashCode = innerMap.size() + directMapSize;
+    forEachDirectMapKeyDo((index,key) -> {
+      hashCode += BitMixer.mix(key);
+      return null;
+    });
+    for (IntCursor cursor : innerMap.keys()) {
       hashCode += BitMixer.mix(cursor.value);
+    }
+  }
+
+  void forEachDirectMapKeyDo(BiFunction<Integer, Integer, Void> function) {
+    int count = 0;
+    int key = 0;
+    while (count < directMapSize) {
+      if (directMap[key] > 0) {
+        function.apply(count++, key);
+      }
+      key++;
     }
   }
 
@@ -89,15 +125,23 @@ final class StateSet extends IntSet {
       return arrayCache;
     }
     changed = false;
-    arrayCache = inner.keys().toArray();
+    arrayCache = new int[size()];
+    forEachDirectMapKeyDo((index,key) -> {
+      arrayCache[index] = key;
+      return null;
+    });
+    int i = directMapSize;
+    for (IntCursor key: innerMap.keys()) {
+        arrayCache[i++] = key.value;
+    }
     // we need to sort this array since "equals" method depend on this
-    Arrays.sort(arrayCache);
+    Arrays.sort(arrayCache, directMapSize, arrayCache.length);
     return arrayCache;
   }
 
   @Override
   int size() {
-    return inner.size();
+    return innerMap.size() + directMapSize;
   }
 
   @Override
