@@ -78,9 +78,27 @@ public abstract class Query {
    * rewritten query is the same as the original query.
    *
    * @see IndexSearcher#rewrite(Query)
+   * @deprecated Will be deprecated since Lucene 10
    */
+  @Deprecated
   public Query rewrite(IndexReader reader) throws IOException {
     return this;
+  }
+
+  /**
+   * Expert: called to re-write queries into primitive queries. For example, a PrefixQuery will be
+   * rewritten into a BooleanQuery that consists of TermQuerys.
+   *
+   * <p>Callers are expected to call <code>rewrite</code> multiple times if necessary, until the
+   * rewritten query is the same as the original query.
+   *
+   * <p>The rewrite process may be able to make use of IndexSearcher's executor and be executed in
+   * parallel if the executor is provided.
+   *
+   * @see IndexSearcher#rewrite(Query)
+   */
+  public Query rewrite(IndexSearcher indexSearcher) throws IOException {
+    return rewrite(indexSearcher.getIndexReader());
   }
 
   /**
